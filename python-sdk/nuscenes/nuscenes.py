@@ -160,10 +160,10 @@ class NuScenes:
         # Store the mapping from token to table index for each table.
         self._token2ind = dict()
         for table in self.table_names:
-            self._token2ind[table] = dict()
+            self._token2ind[table] = dict() # 根据table的名称初始化
 
             for ind, member in enumerate(getattr(self, table)):
-                self._token2ind[table][member['token']] = ind
+                self._token2ind[table][member['token']] = ind # 为不同table下的不同token建立index
 
         # Decorate (adds short-cut) sample_annotation table with for category name.
         for record in self.sample_annotation:
@@ -172,10 +172,10 @@ class NuScenes:
 
         # Decorate (adds short-cut) sample_data with sensor information.
         for record in self.sample_data:
-            cs_record = self.get('calibrated_sensor', record['calibrated_sensor_token'])
-            sensor_record = self.get('sensor', cs_record['sensor_token'])
-            record['sensor_modality'] = sensor_record['modality']
-            record['channel'] = sensor_record['channel']
+            cs_record = self.get('calibrated_sensor', record['calibrated_sensor_token']) # 根据sample_data的calibrated_sensor_token，获取calibrated_sensor的record
+            sensor_record = self.get('sensor', cs_record['sensor_token']) # calibrated_sensor的sensor_token获取sensor的record
+            record['sensor_modality'] = sensor_record['modality'] # 将sensor_record的modality信息赋予sample_data的sensor_modality
+            record['channel'] = sensor_record['channel'] # 将channel(eg:CAM_FRONT)信息赋予sample_data的channel
 
         # Reverse-index samples with sample_data and annotations.
         for record in self.sample:
@@ -183,13 +183,15 @@ class NuScenes:
             record['anns'] = []
 
         for record in self.sample_data:
+            # 如果当前sample_data是一个key_frame
             if record['is_key_frame']:
-                sample_record = self.get('sample', record['sample_token'])
-                sample_record['data'][record['channel']] = record['token']
-
+                sample_record = self.get('sample', record['sample_token']) # 获取sample的record（sample_data中包含该sample的token）
+                sample_record['data'][record['channel']] = record['token'] # 为sample的data字段的record['channel']（eg:CAM_FRONT）添加sample_data的token
+                # 一个sample_data只能记录一张图片或者一帧点云，根据token可以找到标定信息和所属sensor
         for ann_record in self.sample_annotation:
-            sample_record = self.get('sample', ann_record['sample_token'])
-            sample_record['anns'].append(ann_record['token'])
+            sample_record = self.get('sample', ann_record['sample_token']) # 获取sample的record（sample_annotation中包含该sample的token）
+            sample_record['anns'].append(ann_record['token']) # 为sample的anns字段添加ann_record['token'] 
+        # 至此可以在一个sample找到所有的data的annotation信息的token（便于查找)
 
         # Add reverse indices from log records to map records.
         if 'log_tokens' not in self.map[0].keys():
@@ -197,9 +199,9 @@ class NuScenes:
         log_to_map = dict()
         for map_record in self.map:
             for log_token in map_record['log_tokens']:
-                log_to_map[log_token] = map_record['token']
+                log_to_map[log_token] = map_record['token'] # 将log_to_map的log_token赋予map_record['token']
         for log_record in self.log:
-            log_record['map_token'] = log_to_map[log_record['token']]
+            log_record['map_token'] = log_to_map[log_record['token']] # 根据log token找到对应的map token,并在log中增加map_token字段（方便在log中找到map）
 
         if verbose:
             print("Done reverse indexing in {:.1f} seconds.\n======".format(time.time() - start_time))
@@ -212,7 +214,7 @@ class NuScenes:
         :return: Table record. See README.md for record details for each table.
         """
         assert table_name in self.table_names, "Table {} not found".format(table_name)
-
+        # self.getind(table_name, token)可以根据token返回index（数字）
         return getattr(self, table_name)[self.getind(table_name, token)]
 
     def getind(self, table_name: str, token: str) -> int:
@@ -269,9 +271,9 @@ class NuScenes:
 
         data_path = self.get_sample_data_path(sample_data_token)
 
-        if sensor_record['modality'] == 'camera':
-            cam_intrinsic = np.array(cs_record['camera_intrinsic'])
-            imsize = (sd_record['width'], sd_record['height'])
+        if sensor_record['modality'] == 'camera': # 如果当前处理modality是camera
+            cam_intrinsic = np.array(cs_record['camera_intrinsic']) # 根据cs的record获取相机内参
+            imsize = (sd_record['width'], sd_record['height']) # 获取图片宽高 eg:(1600， 900）
         else:
             cam_intrinsic = None
             imsize = None
@@ -280,7 +282,7 @@ class NuScenes:
         if selected_anntokens is not None:
             boxes = list(map(self.get_box, selected_anntokens))
         else:
-            boxes = self.get_boxes(sample_data_token)
+            boxes = self.get_boxes(sample_data_token) # 获取标注的box信息
 
         # Make list of Box objects including coord system transforms.
         box_list = []
@@ -291,6 +293,7 @@ class NuScenes:
                 box.translate(-np.array(pose_record['translation']))
                 box.rotate(Quaternion(scalar=np.cos(yaw / 2), vector=[0, 0, np.sin(yaw / 2)]).inverse)
             else:
+                # 现将box转换到子车坐标系，然后将box转换到传感器坐标系
                 # Move box to ego vehicle coord system.
                 box.translate(-np.array(pose_record['translation']))
                 box.rotate(Quaternion(pose_record['rotation']).inverse)
@@ -312,9 +315,9 @@ class NuScenes:
         Instantiates a Box class from a sample annotation record.
         :param sample_annotation_token: Unique sample_annotation identifier.
         """
-        record = self.get('sample_annotation', sample_annotation_token)
+        record = self.get('sample_annotation', sample_annotation_token) # 根据sample_annotation_token获取sample_annotation的record
         return Box(record['translation'], record['size'], Quaternion(record['rotation']),
-                   name=record['category_name'], token=record['token'])
+                   name=record['category_name'], token=record['token']) # 利用该record的translation，size，rotation和category_name以及record['token']初始化一个Box实例
 
     def get_boxes(self, sample_data_token: str) -> List[Box]:
         """
@@ -329,23 +332,27 @@ class NuScenes:
         sd_record = self.get('sample_data', sample_data_token)
         curr_sample_record = self.get('sample', sd_record['sample_token'])
 
+        # 关键帧或者没有前一帧则直接返回标注的box信息
         if curr_sample_record['prev'] == "" or sd_record['is_key_frame']:
             # If no previous annotations available, or if sample_data is keyframe just return the current ones.
-            boxes = list(map(self.get_box, curr_sample_record['anns']))
-
+            boxes = list(map(self.get_box, curr_sample_record['anns'])) # 将该sample先的全部annotations信息的box组成list
+        # 否则要进行插值
         else:
+            # 获取前一帧的record
             prev_sample_record = self.get('sample', curr_sample_record['prev'])
-
+            # 获取当前帧全部标注的record
             curr_ann_recs = [self.get('sample_annotation', token) for token in curr_sample_record['anns']]
+            # 获取前一帧全部标注的record
             prev_ann_recs = [self.get('sample_annotation', token) for token in prev_sample_record['anns']]
 
             # Maps instance tokens to prev_ann records
             prev_inst_map = {entry['instance_token']: entry for entry in prev_ann_recs}
-
-            t0 = prev_sample_record['timestamp']
-            t1 = curr_sample_record['timestamp']
-            t = sd_record['timestamp']
-
+            # 获取时间戳
+            t0 = prev_sample_record['timestamp'] # 获取前一帧的时间戳
+            t1 = curr_sample_record['timestamp'] # 获取当前帧的时间戳
+            t = sd_record['timestamp'] # 获取sample_data的时间戳
+            # t和t1不是一个值吗？？？
+            
             # There are rare situations where the timestamps in the DB are off so ensure that t0 < t < t1.
             t = max(t0, min(t1, t))
 
@@ -358,15 +365,15 @@ class NuScenes:
 
                     # Interpolate center.
                     center = [np.interp(t, [t0, t1], [c0, c1]) for c0, c1 in zip(prev_ann_rec['translation'],
-                                                                                 curr_ann_rec['translation'])]
+                                                                                 curr_ann_rec['translation'])] # 中心位置插值
 
                     # Interpolate orientation.
                     rotation = Quaternion.slerp(q0=Quaternion(prev_ann_rec['rotation']),
                                                 q1=Quaternion(curr_ann_rec['rotation']),
-                                                amount=(t - t0) / (t1 - t0))
+                                                amount=(t - t0) / (t1 - t0)) # 旋转插值
 
                     box = Box(center, curr_ann_rec['size'], rotation, name=curr_ann_rec['category_name'],
-                              token=curr_ann_rec['token'])
+                              token=curr_ann_rec['token']) # size不变
                 else:
                     # If not, simply grab the current annotation.
                     box = self.get_box(curr_ann_rec['token'])
@@ -385,7 +392,7 @@ class NuScenes:
         :return: <np.float: 3>. Velocity in x/y/z direction in m/s.
         """
 
-        current = self.get('sample_annotation', sample_annotation_token)
+        current = self.get('sample_annotation', sample_annotation_token) # 根据token获取当前标注的sample_annotation的record
         has_prev = current['prev'] != ''
         has_next = current['next'] != ''
 
@@ -393,11 +400,12 @@ class NuScenes:
         if not has_prev and not has_next:
             return np.array([np.nan, np.nan, np.nan])
 
+        # 如果存在prev，则first为prev，否则为current
         if has_prev:
             first = self.get('sample_annotation', current['prev'])
         else:
             first = current
-
+        # 如果存在next，则last为next，否则为current
         if has_next:
             last = self.get('sample_annotation', current['next'])
         else:
@@ -405,20 +413,23 @@ class NuScenes:
 
         pos_last = np.array(last['translation'])
         pos_first = np.array(first['translation'])
-        pos_diff = pos_last - pos_first
+        pos_diff = pos_last - pos_first # 计算平移差
 
         time_last = 1e-6 * self.get('sample', last['sample_token'])['timestamp']
         time_first = 1e-6 * self.get('sample', first['sample_token'])['timestamp']
-        time_diff = time_last - time_first
+        time_diff = time_last - time_first # 计算时间差
 
         if has_next and has_prev:
             # If doing centered difference, allow for up to double the max_time_diff.
+            # 如果存在前后帧，则最大时间差可以放大2倍
             max_time_diff *= 2
 
+        # 如果时间差太大，则无法估计速度
         if time_diff > max_time_diff:
             # If time_diff is too big, don't return an estimate.
             return np.array([np.nan, np.nan, np.nan])
         else:
+            # 返回速度估计
             return pos_diff / time_diff
 
     def get_sample_lidarseg_stats(self,

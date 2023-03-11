@@ -90,7 +90,7 @@ def print_final_metrics(metrics: TrackingMetrics) -> None:
     # Print high-level metrics.
     print('\nAggregated results:')
     for metric_name in metric_names:
-        val = metrics.compute_metric(metric_name, 'all')
+        val = metrics.compute_metric(metric_name, 'all') # 计算平均值或者求和
         print_format = metric_name_to_print_format(metric_name)
         print('%s\t%s' % (metric_name.upper(), print_format % val))
 

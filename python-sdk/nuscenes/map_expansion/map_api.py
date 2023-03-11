@@ -150,7 +150,7 @@ class NuScenesMap:
         """ Store the mapping from token to layer index for each layer. """
         self._token2ind = dict()
         for layer_name in self.layer_names:
-            self._token2ind[layer_name] = dict()
+            self._token2ind[layer_name] = dict() # 双重字典
 
             for ind, member in enumerate(getattr(self, layer_name)):
                 self._token2ind[layer_name][member['token']] = ind
@@ -1419,12 +1419,12 @@ class NuScenesMapExplorer:
         records_in_patch = dict()
         for layer_name in layer_names:
             layer_records = []
-            for record in getattr(self.map_api, layer_name):
-                token = record['token']
-                if self.is_record_in_patch(layer_name, token, box_coords, mode):
-                    layer_records.append(token)
+            for record in getattr(self.map_api, layer_name): # 获取该层的record
+                token = record['token'] # 获取该record的token
+                if self.is_record_in_patch(layer_name, token, box_coords, mode): # 如何该record与该box相交
+                    layer_records.append(token) # 在layer_records中添加在record
 
-            records_in_patch.update({layer_name: layer_records})
+            records_in_patch.update({layer_name: layer_records}) # 将该层的record记录在dict中
 
         return records_in_patch
 
@@ -1445,9 +1445,9 @@ class NuScenesMapExplorer:
         if mode not in ['intersect', 'within']:
             raise ValueError("Mode {} is not valid, choice=('intersect', 'within')".format(mode))
 
-        if layer_name in self.map_api.lookup_polygon_layers:
+        if layer_name in self.map_api.lookup_polygon_layers: # 如果是poly则进入下面的语句
             return self._is_polygon_record_in_patch(token, layer_name, box_coords, mode)
-        elif layer_name in self.map_api.non_geometric_line_layers:
+        elif layer_name in self.map_api.non_geometric_line_layers: # 如果是line则进入下面的语句
             return self._is_line_record_in_patch(token, layer_name, box_coords,  mode)
         else:
             raise ValueError("{} is not a valid layer".format(layer_name))
@@ -1529,11 +1529,11 @@ class NuScenesMapExplorer:
         :param line_token: The token of the line record.
         :return: The line wrapped in a LineString object.
         """
-        line_record = self.map_api.get('line', line_token)
+        line_record = self.map_api.get('line', line_token) # 获取该line的record
         line_nodes = [(self.map_api.get('node', token)['x'], self.map_api.get('node', token)['y'])
-                      for token in line_record['node_tokens']]
+                      for token in line_record['node_tokens']] # 获取该line的节点
 
-        return LineString(line_nodes)
+        return LineString(line_nodes) # 根据line的节点构造LineString
 
     def get_bounds(self, layer_name: str, token: str) -> Tuple[float, float, float, float]:
         """
@@ -1627,18 +1627,18 @@ class NuScenesMapExplorer:
         if layer_name not in self.map_api.lookup_polygon_layers:
             raise ValueError('{} is not a polygonal layer'.format(layer_name))
 
-        x_min, y_min, x_max, y_max = box_coords
-        record = self.map_api.get(layer_name, token)
-        rectangular_patch = box(x_min, y_min, x_max, y_max)
+        x_min, y_min, x_max, y_max = box_coords # 获取box坐标
+        record = self.map_api.get(layer_name, token) # 获取该层的sample的record
+        rectangular_patch = box(x_min, y_min, x_max, y_max) # 构造shapely polygon对象
 
         if layer_name == 'drivable_area':
             polygons = [self.map_api.extract_polygon(polygon_token) for polygon_token in record['polygon_tokens']]
             geom = MultiPolygon(polygons)
         else:
-            geom = self.map_api.extract_polygon(record['polygon_token'])
+            geom = self.map_api.extract_polygon(record['polygon_token']) # 获取shapely polygon对象
 
         if mode == 'intersect':
-            return geom.intersects(rectangular_patch)
+            return geom.intersects(rectangular_patch) # 计算二者是否相交
         elif mode == 'within':
             return geom.within(rectangular_patch)
 

@@ -90,19 +90,20 @@ class MOTAccumulatorCustom(motmetrics.mot.MOTAccumulator):
         """
 
         mapping_infos = []
-        new_oid = count()
+        new_oid = count() # 创建新object id总的迭代器，用于数据合并映射
         new_hid = count()
 
-        r = MOTAccumulatorCustom.new_event_dataframe()
+        r = MOTAccumulatorCustom.new_event_dataframe() # 创建一个新的event dataframe
+        # 逐个dataframe处理
         for df in dfs:
 
             if isinstance(df, MOTAccumulatorCustom):
-                df = df.events
+                df = df.events # 获取Accumulator的events，表示一个seq的事件共40帧
 
             copy = df.copy()
             infos = {}
 
-            # Update index
+            # Update index 更新索引
             if update_frame_indices:
                 next_frame_id = max(r.index.get_level_values(0).max() + 1,
                                     r.index.get_level_values(0).unique().shape[0])

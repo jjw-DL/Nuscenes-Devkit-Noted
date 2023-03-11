@@ -31,7 +31,7 @@ def accumulate(gt_boxes: EvalBoxes,
     # Organize input and initialize accumulators.
     # ---------------------------------------------
 
-    # Count the positives.
+    # Count the positives. 统计gt中正例的数量 eg: car:53043 total:121861
     npos = len([1 for gt_box in gt_boxes.all if gt_box.detection_name == class_name])
     if verbose:
         print("Found {} GT of class {} out of {} total across {} samples.".
@@ -41,7 +41,7 @@ def accumulate(gt_boxes: EvalBoxes,
     if npos == 0:
         return DetectionMetricData.no_predictions()
 
-    # Organize the predictions in a single list.
+    # Organize the predictions in a single list. car:135206 total:787132
     pred_boxes_list = [box for box in pred_boxes.all if box.detection_name == class_name]
     pred_confs = [box.detection_score for box in pred_boxes_list]
 
@@ -49,7 +49,7 @@ def accumulate(gt_boxes: EvalBoxes,
         print("Found {} PRED of class {} out of {} total across {} samples.".
               format(len(pred_confs), class_name, len(pred_boxes.all), len(pred_boxes.sample_tokens)))
 
-    # Sort by confidence.
+    # Sort by confidence. 对分数进行升序排列，逆向输出排序索引(从大到小)
     sortind = [i for (v, i) in sorted((v, i) for (i, v) in enumerate(pred_confs))][::-1]
 
     # Do the actual matching.
@@ -70,50 +70,52 @@ def accumulate(gt_boxes: EvalBoxes,
     # ---------------------------------------------
 
     taken = set()  # Initially no gt bounding box is matched.
+    # 逐个box按照索引处理
     for ind in sortind:
-        pred_box = pred_boxes_list[ind]
-        min_dist = np.inf
-        match_gt_idx = None
-
+        pred_box = pred_boxes_list[ind] # 取出预测box
+        min_dist = np.inf # 初始化最小距离为无穷
+        match_gt_idx = None # 初始化匹配的gt为None
+        # 在该sample中，逐个gt box匹配
         for gt_idx, gt_box in enumerate(gt_boxes[pred_box.sample_token]):
 
             # Find closest match among ground truth boxes
+            # 如果gt的类别相同，并且gt没有别匹配过，则进入下面
             if gt_box.detection_name == class_name and not (pred_box.sample_token, gt_idx) in taken:
-                this_distance = dist_fcn(gt_box, pred_box)
-                if this_distance < min_dist:
-                    min_dist = this_distance
-                    match_gt_idx = gt_idx
+                this_distance = dist_fcn(gt_box, pred_box) # 计算两个box在BEV平面的中心距离
+                if this_distance < min_dist: 
+                    min_dist = this_distance # 更新最小距离
+                    match_gt_idx = gt_idx # 更新匹配索引
 
         # If the closest match is close enough according to threshold we have a match!
-        is_match = min_dist < dist_th
+        is_match = min_dist < dist_th # dist_th = 0.5
 
         if is_match:
-            taken.add((pred_box.sample_token, match_gt_idx))
+            taken.add((pred_box.sample_token, match_gt_idx)) # 在匹配set中加入该预测box的token和匹配gt的id
 
             #  Update tp, fp and confs.
-            tp.append(1)
-            fp.append(0)
-            conf.append(pred_box.detection_score)
+            tp.append(1) # 如果匹配上了，则tp增加1
+            fp.append(0) # 如果匹配上了，则fp不变
+            conf.append(pred_box.detection_score) # 记录匹配预测分数
 
             # Since it is a match, update match data also.
-            gt_box_match = gt_boxes[pred_box.sample_token][match_gt_idx]
+            gt_box_match = gt_boxes[pred_box.sample_token][match_gt_idx] # 提取匹配的gt box
 
-            match_data['trans_err'].append(center_distance(gt_box_match, pred_box))
-            match_data['vel_err'].append(velocity_l2(gt_box_match, pred_box))
-            match_data['scale_err'].append(1 - scale_iou(gt_box_match, pred_box))
+            match_data['trans_err'].append(center_distance(gt_box_match, pred_box)) # 计算中心距离误差
+            match_data['vel_err'].append(velocity_l2(gt_box_match, pred_box)) # 计算速度误差
+            match_data['scale_err'].append(1 - scale_iou(gt_box_match, pred_box)) # 计算3D iou误差
 
             # Barrier orientation is only determined up to 180 degree. (For cones orientation is discarded later)
             period = np.pi if class_name == 'barrier' else 2 * np.pi
-            match_data['orient_err'].append(yaw_diff(gt_box_match, pred_box, period=period))
+            match_data['orient_err'].append(yaw_diff(gt_box_match, pred_box, period=period)) # 计算yaw角误差
 
-            match_data['attr_err'].append(1 - attr_acc(gt_box_match, pred_box))
-            match_data['conf'].append(pred_box.detection_score)
+            match_data['attr_err'].append(1 - attr_acc(gt_box_match, pred_box)) # 计算属性误差
+            match_data['conf'].append(pred_box.detection_score) # 记录预测分数
 
         else:
             # No match. Mark this as a false positive.
-            tp.append(0)
-            fp.append(1)
-            conf.append(pred_box.detection_score)
+            tp.append(0) # 如果没有匹配上，则tp不变
+            fp.append(1) # fp增加1
+            conf.append(pred_box.detection_score) # 记录分数
 
     # Check if we have any matches. If not, just return a "no predictions" array.
     if len(match_data['trans_err']) == 0:
@@ -124,17 +126,17 @@ def accumulate(gt_boxes: EvalBoxes,
     # ---------------------------------------------
 
     # Accumulate.
-    tp = np.cumsum(tp).astype(float)
+    tp = np.cumsum(tp).astype(float) # tp逐个累加 --> (135206) 
     fp = np.cumsum(fp).astype(float)
     conf = np.array(conf)
 
     # Calculate precision and recall.
-    prec = tp / (fp + tp)
-    rec = tp / float(npos)
+    prec = tp / (fp + tp) # 计算精确率
+    rec = tp / float(npos) # 计算召回率
 
     rec_interp = np.linspace(0, 1, DetectionMetricData.nelem)  # 101 steps, from 0% to 100% recall.
-    prec = np.interp(rec_interp, rec, prec, right=0)
-    conf = np.interp(rec_interp, rec, conf, right=0)
+    prec = np.interp(rec_interp, rec, prec, right=0) # prec插值101个值
+    conf = np.interp(rec_interp, rec, conf, right=0) # rec插值101个值
     rec = rec_interp
 
     # ---------------------------------------------
@@ -147,10 +149,10 @@ def accumulate(gt_boxes: EvalBoxes,
 
         else:
             # For each match_data, we first calculate the accumulated mean.
-            tmp = cummean(np.array(match_data[key]))
+            tmp = cummean(np.array(match_data[key])) # eg:(45394,)
 
             # Then interpolate based on the confidences. (Note reversing since np.interp needs increasing arrays)
-            match_data[key] = np.interp(conf[::-1], match_data['conf'][::-1], tmp[::-1])[::-1]
+            match_data[key] = np.interp(conf[::-1], match_data['conf'][::-1], tmp[::-1])[::-1] # 插值平移等误差
 
     # ---------------------------------------------
     # Done. Instantiate MetricData and return
@@ -168,22 +170,22 @@ def accumulate(gt_boxes: EvalBoxes,
 def calc_ap(md: DetectionMetricData, min_recall: float, min_precision: float) -> float:
     """ Calculated average precision. """
 
-    assert 0 <= min_precision < 1
-    assert 0 <= min_recall <= 1
+    assert 0 <= min_precision < 1 # 0.1
+    assert 0 <= min_recall <= 1 # 0.1
 
-    prec = np.copy(md.precision)
-    prec = prec[round(100 * min_recall) + 1:]  # Clip low recalls. +1 to exclude the min recall bin.
+    prec = np.copy(md.precision) # (101,) 降序
+    prec = prec[round(100 * min_recall) + 1:]  # Clip low recalls. +1 to exclude the min recall bin. 取最小阈值后面的值-->(90,)
     prec -= min_precision  # Clip low precision
-    prec[prec < 0] = 0
-    return float(np.mean(prec)) / (1.0 - min_precision)
+    prec[prec < 0] = 0 # 对小于0的值进行截断
+    return float(np.mean(prec)) / (1.0 - min_precision) # 计算ap, pr曲线的面积
 
 
 def calc_tp(md: DetectionMetricData, min_recall: float, metric_name: str) -> float:
     """ Calculates true positive errors. """
 
-    first_ind = round(100 * min_recall) + 1  # +1 to exclude the error at min recall.
-    last_ind = md.max_recall_ind  # First instance of confidence = 0 is index of max achieved recall.
+    first_ind = round(100 * min_recall) + 1  # +1 to exclude the error at min recall. 找到第一个recall索引 11
+    last_ind = md.max_recall_ind  # First instance of confidence = 0 is index of max achieved recall. 找到最大的recall索引 96
     if last_ind < first_ind:
         return 1.0  # Assign 1 here. If this happens for all classes, the score for that TP metric will be 0.
     else:
-        return float(np.mean(getattr(md, metric_name)[first_ind: last_ind + 1]))  # +1 to include error at max recall.
+        return float(np.mean(getattr(md, metric_name)[first_ind: last_ind + 1]))  # +1 to include error at max recall. 计算该误差的平均值

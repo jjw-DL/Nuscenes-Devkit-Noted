@@ -81,7 +81,7 @@ class DetectionConfig:
 class DetectionMetricData(MetricData):
     """ This class holds accumulated and interpolated data required to calculate the detection metrics. """
 
-    nelem = 101
+    nelem = 101 # 101段插值分段点
 
     def __init__(self,
                  recall: np.array,
@@ -108,14 +108,14 @@ class DetectionMetricData(MetricData):
         assert all(recall == sorted(recall))  # Recalls should be ascending.
 
         # Set attributes explicitly to help IDEs figure out what is going on.
-        self.recall = recall
-        self.precision = precision
-        self.confidence = confidence
-        self.trans_err = trans_err
-        self.vel_err = vel_err
-        self.scale_err = scale_err
-        self.orient_err = orient_err
-        self.attr_err = attr_err
+        self.recall = recall # (101,) 升序排列
+        self.precision = precision # (101,) 降序排列
+        self.confidence = confidence # (101,) 置信度
+        self.trans_err = trans_err # (101,) 平移误差
+        self.vel_err = vel_err # (101,) 速度误差
+        self.scale_err = scale_err # (101,) 3D iou误差
+        self.orient_err = orient_err # (101,) yaw角误差
+        self.attr_err = attr_err # (101,) 属性误差
 
     def __eq__(self, other):
         eq = True
@@ -197,7 +197,7 @@ class DetectionMetrics:
 
     def __init__(self, cfg: DetectionConfig):
 
-        self.cfg = cfg
+        self.cfg = cfg # DetectionConfig类
         self._label_aps = defaultdict(lambda: defaultdict(float))
         self._label_tp_errors = defaultdict(lambda: defaultdict(float))
         self.eval_time = None
@@ -220,25 +220,29 @@ class DetectionMetrics:
     @property
     def mean_dist_aps(self) -> Dict[str, float]:
         """ Calculates the mean over distance thresholds for each label. """
+        # 同一类别，不同距离阈值的平均ap值 --> 10个值
         return {class_name: np.mean(list(d.values())) for class_name, d in self._label_aps.items()}
 
     @property
     def mean_ap(self) -> float:
         """ Calculates the mean AP by averaging over distance thresholds and classes. """
+        # 计算所有类别和不同阈值的平均ap --> 1个值
         return float(np.mean(list(self.mean_dist_aps.values())))
 
     @property
     def tp_errors(self) -> Dict[str, float]:
         """ Calculates the mean true positive error across all classes for each metric. """
         errors = {}
+        # 逐个metric item计算
         for metric_name in TP_METRICS:
             class_errors = []
+            # 逐个类别加入
             for detection_name in self.cfg.class_names:
                 class_errors.append(self.get_label_tp(detection_name, metric_name))
 
-            errors[metric_name] = float(np.nanmean(class_errors))
+            errors[metric_name] = float(np.nanmean(class_errors)) # 计算所有类别的平均值
 
-        return errors
+        return errors # 5个值
 
     @property
     def tp_scores(self) -> Dict[str, float]:
@@ -254,7 +258,7 @@ class DetectionMetrics:
 
             scores[metric_name] = score
 
-        return scores
+        return scores # 1-error --> 5个值
 
     @property
     def nd_score(self) -> float:
@@ -263,6 +267,9 @@ class DetectionMetrics:
         :return: The NDS.
         """
         # Summarize.
+        # self.cfg.mean_ap_weight：5
+        # self.mean_ap:0.6587
+        # np.sum(list(self.tp_scores.values())):3.6139
         total = float(self.cfg.mean_ap_weight * self.mean_ap + np.sum(list(self.tp_scores.values())))
 
         # Normalize.
@@ -411,7 +418,7 @@ class DetectionMetricDataList:
 
     def set(self, detection_name: str, match_distance: float, data: DetectionMetricData):
         """ Sets the MetricData entry for a certain detection_name and match_distance. """
-        self.md[(detection_name, match_distance)] = data
+        self.md[(detection_name, match_distance)] = data # eg:{(car, 0.5):DetectionMetricData}
 
     def serialize(self) -> dict:
         return {key[0] + ':' + str(key[1]): value.serialize() for key, value in self.md.items()}

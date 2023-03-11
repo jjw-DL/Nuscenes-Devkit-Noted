@@ -57,34 +57,34 @@ class DetectionEval:
         :param output_dir: Folder to save plots and results to.
         :param verbose: Whether to print to stdout.
         """
-        self.nusc = nusc
-        self.result_path = result_path
-        self.eval_set = eval_set
-        self.output_dir = output_dir
-        self.verbose = verbose
-        self.cfg = config
+        self.nusc = nusc # Nuscenes对象
+        self.result_path = result_path # '/tmp/xxx/results_nusc.json'
+        self.eval_set = eval_set # v1.0-trainval
+        self.output_dir = output_dir # '/tmp/xxx/result/pts_bbox'
+        self.verbose = verbose # False
+        self.cfg = config # config_factory
 
         # Check result file exists.
         assert os.path.exists(result_path), 'Error: The result file does not exist!'
 
         # Make dirs.
-        self.plot_dir = os.path.join(self.output_dir, 'plots')
+        self.plot_dir = os.path.join(self.output_dir, 'plots') # '/tmp/xxx/result/pts_bbox/plots'
         if not os.path.isdir(self.output_dir):
-            os.makedirs(self.output_dir)
+            os.makedirs(self.output_dir) # 构造输出文件夹
         if not os.path.isdir(self.plot_dir):
-            os.makedirs(self.plot_dir)
+            os.makedirs(self.plot_dir) # 构造绘图文件夹
 
         # Load data.
         if verbose:
             print('Initializing nuScenes detection evaluation')
         self.pred_boxes, self.meta = load_prediction(self.result_path, self.cfg.max_boxes_per_sample, DetectionBox,
-                                                     verbose=verbose)
-        self.gt_boxes = load_gt(self.nusc, self.eval_set, DetectionBox, verbose=verbose)
+                                                     verbose=verbose) # 根据json文件加载并构建pred
+        self.gt_boxes = load_gt(self.nusc, self.eval_set, DetectionBox, verbose=verbose) # 加载gt
 
         assert set(self.pred_boxes.sample_tokens) == set(self.gt_boxes.sample_tokens), \
             "Samples in split doesn't match samples in predictions."
 
-        # Add center distances.
+        # Add center distances. 为box添加与自车的距离字段
         self.pred_boxes = add_center_dist(nusc, self.pred_boxes)
         self.gt_boxes = add_center_dist(nusc, self.gt_boxes)
 
@@ -96,7 +96,7 @@ class DetectionEval:
             print('Filtering ground truth annotations')
         self.gt_boxes = filter_eval_boxes(nusc, self.gt_boxes, self.cfg.class_range, verbose=verbose)
 
-        self.sample_tokens = self.gt_boxes.sample_tokens
+        self.sample_tokens = self.gt_boxes.sample_tokens # 记录gt的sample token
 
     def evaluate(self) -> Tuple[DetectionMetrics, DetectionMetricDataList]:
         """
@@ -111,8 +111,11 @@ class DetectionEval:
         if self.verbose:
             print('Accumulating metric data...')
         metric_data_list = DetectionMetricDataList()
+        # 逐类计算
         for class_name in self.cfg.class_names:
-            for dist_th in self.cfg.dist_ths:
+            # 逐距离阈值计算
+            for dist_th in self.cfg.dist_ths: # [0.5, 1.0, 2.0, 4.0]
+                # 返回DetectionMetricData
                 md = accumulate(self.gt_boxes, self.pred_boxes, class_name, self.cfg.dist_fcn_callable, dist_th)
                 metric_data_list.set(class_name, dist_th, md)
 
@@ -121,24 +124,26 @@ class DetectionEval:
         # -----------------------------------
         if self.verbose:
             print('Calculating metrics...')
-        metrics = DetectionMetrics(self.cfg)
+        metrics = DetectionMetrics(self.cfg) # 根据配置文件构造DetectionMetrics类
+        # 逐类别计算
         for class_name in self.cfg.class_names:
-            # Compute APs.
+            # Compute APs. 逐阈值计算
             for dist_th in self.cfg.dist_ths:
-                metric_data = metric_data_list[(class_name, dist_th)]
-                ap = calc_ap(metric_data, self.cfg.min_recall, self.cfg.min_precision)
-                metrics.add_label_ap(class_name, dist_th, ap)
+                metric_data = metric_data_list[(class_name, dist_th)] # 根据类别和阈值获取metric data
+                ap = calc_ap(metric_data, self.cfg.min_recall, self.cfg.min_precision) # 0.1, 0.1 --> 计算该阈值下的ap
+                metrics.add_label_ap(class_name, dist_th, ap) # 根据类别和阈值将该ap添加进入DetectionMetrics
 
             # Compute TP metrics.
             for metric_name in TP_METRICS:
-                metric_data = metric_data_list[(class_name, self.cfg.dist_th_tp)]
+                metric_data = metric_data_list[(class_name, self.cfg.dist_th_tp)] # 根据类别和阈值获取metric data
+                # 针对'traffic_cone'和'barrier'的属性和速度以及方向误差单独处理
                 if class_name in ['traffic_cone'] and metric_name in ['attr_err', 'vel_err', 'orient_err']:
                     tp = np.nan
                 elif class_name in ['barrier'] and metric_name in ['attr_err', 'vel_err']:
                     tp = np.nan
                 else:
-                    tp = calc_tp(metric_data, self.cfg.min_recall, metric_name)
-                metrics.add_label_tp(class_name, metric_name, tp)
+                    tp = calc_tp(metric_data, self.cfg.min_recall, metric_name) # 计算true positive error
+                metrics.add_label_tp(class_name, metric_name, tp) # 根据类别和metric名称将该tp添加进入DetectionMetrics
 
         # Compute evaluation time.
         metrics.add_runtime(time.time() - start_time)

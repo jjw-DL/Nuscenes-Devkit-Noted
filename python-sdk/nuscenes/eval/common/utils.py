@@ -14,11 +14,12 @@ DetectionBox = Any  # Workaround as direct imports lead to cyclic dependencies.
 
 def center_distance(gt_box: EvalBox, pred_box: EvalBox) -> float:
     """
-    L2 distance between the box centers (xy only).
+    L2 distance between the box centers (xy only). 
     :param gt_box: GT annotation sample.
     :param pred_box: Predicted sample.
     :return: L2 distance.
     """
+    # 计算BEV平面中心距离
     return np.linalg.norm(np.array(pred_box.translation[:2]) - np.array(gt_box.translation[:2]))
 
 
@@ -30,6 +31,7 @@ def velocity_l2(gt_box: EvalBox, pred_box: EvalBox) -> float:
     :param pred_box: Predicted sample.
     :return: L2 distance.
     """
+    # 速度的L2范数
     return np.linalg.norm(np.array(pred_box.velocity) - np.array(gt_box.velocity))
 
 
@@ -41,10 +43,10 @@ def yaw_diff(gt_box: EvalBox, eval_box: EvalBox, period: float = 2*np.pi) -> flo
     :param period: Periodicity in radians for assessing angle difference.
     :return: Yaw angle difference in radians in [0, pi].
     """
-    yaw_gt = quaternion_yaw(Quaternion(gt_box.rotation))
+    yaw_gt = quaternion_yaw(Quaternion(gt_box.rotation)) # 计算yaw角
     yaw_est = quaternion_yaw(Quaternion(eval_box.rotation))
 
-    return abs(angle_diff(yaw_gt, yaw_est, period))
+    return abs(angle_diff(yaw_gt, yaw_est, period)) # 计算yaw的误差 (-pi, 0]
 
 
 def angle_diff(x: float, y: float, period: float) -> float:
@@ -76,10 +78,10 @@ def attr_acc(gt_box: DetectionBox, pred_box: DetectionBox) -> float:
     if gt_box.attribute_name == '':
         # If the class does not have attributes or this particular sample is missing attributes, return nan, which is
         # ignored later. Note that about 0.4% of the sample_annotations have no attributes, although they should.
-        acc = np.nan
+        acc = np.nan # 如果没有属性则返回nan
     else:
         # Check that label is correct.
-        acc = float(gt_box.attribute_name == pred_box.attribute_name)
+        acc = float(gt_box.attribute_name == pred_box.attribute_name) # 否则返回0或1
     return acc
 
 
@@ -93,18 +95,18 @@ def scale_iou(sample_annotation: EvalBox, sample_result: EvalBox) -> float:
     :return: Scale IOU.
     """
     # Validate inputs.
-    sa_size = np.array(sample_annotation.size)
+    sa_size = np.array(sample_annotation.size) # 提取gt的长宽高
     sr_size = np.array(sample_result.size)
     assert all(sa_size > 0), 'Error: sample_annotation sizes must be >0.'
     assert all(sr_size > 0), 'Error: sample_result sizes must be >0.'
 
     # Compute IOU.
-    min_wlh = np.minimum(sa_size, sr_size)
-    volume_annotation = np.prod(sa_size)
-    volume_result = np.prod(sr_size)
-    intersection = np.prod(min_wlh)  # type: float
-    union = volume_annotation + volume_result - intersection  # type: float
-    iou = intersection / union
+    min_wlh = np.minimum(sa_size, sr_size) # 计算交集的长宽高
+    volume_annotation = np.prod(sa_size) # 计算gt的体积
+    volume_result = np.prod(sr_size) # 计算预测的体积
+    intersection = np.prod(min_wlh)  # 计算交集的体积
+    union = volume_annotation + volume_result - intersection  # 计算并集的体积
+    iou = intersection / union # 计算iou
 
     return iou
 

@@ -23,19 +23,19 @@ def load_prediction(result_path: str, max_boxes_per_sample: int, box_cls, verbos
     """
     Loads object predictions from file.
     :param result_path: Path to the .json result file provided by the user.
-    :param max_boxes_per_sample: Maximim number of boxes allowed per sample.
-    :param box_cls: Type of box to load, e.g. DetectionBox or TrackingBox.
+    :param max_boxes_per_sample: Maximim number of boxes allowed per sample. 500
+    :param box_cls: Type of box to load, e.g. DetectionBox or TrackingBox. DetectionBox
     :param verbose: Whether to print messages to stdout.
     :return: The deserialized results and meta data.
     """
 
     # Load from file and check that the format is correct.
     with open(result_path) as f:
-        data = json.load(f)
+        data = json.load(f) # 加载json文件
     assert 'results' in data, 'Error: No field `results` in result file. Please note that the result format changed.' \
                               'See https://www.nuscenes.org/object-detection for more information.'
 
-    # Deserialize results and get meta data.
+    # Deserialize results and get meta data. 将box转换为DetectionBox
     all_results = EvalBoxes.deserialize(data['results'], box_cls)
     meta = data['meta']
     if verbose:
@@ -54,26 +54,26 @@ def load_gt(nusc: NuScenes, eval_split: str, box_cls, verbose: bool = False) -> 
     """
     Loads ground truth boxes from DB.
     :param nusc: A NuScenes instance.
-    :param eval_split: The evaluation split for which we load GT boxes.
-    :param box_cls: Type of box to load, e.g. DetectionBox or TrackingBox.
+    :param eval_split: The evaluation split for which we load GT boxes. --> val
+    :param box_cls: Type of box to load, e.g. DetectionBox or TrackingBox. --> DetectionBox
     :param verbose: Whether to print messages to stdout.
     :return: The GT boxes.
     """
     # Init.
     if box_cls == DetectionBox:
-        attribute_map = {a['token']: a['name'] for a in nusc.attribute}
+        attribute_map = {a['token']: a['name'] for a in nusc.attribute} # 将nuscenes的属性和token对应
 
     if verbose:
         print('Loading annotations for {} split from nuScenes version: {}'.format(eval_split, nusc.version))
     # Read out all sample_tokens in DB.
-    sample_tokens_all = [s['token'] for s in nusc.sample]
+    sample_tokens_all = [s['token'] for s in nusc.sample] # (34149,)
     assert len(sample_tokens_all) > 0, "Error: Database has no samples!"
 
     # Only keep samples from this split.
-    splits = create_splits_scenes()
+    splits = create_splits_scenes() # 获取全部场景(包括train和val以及test)
 
     # Check compatibility of split with nusc_version.
-    version = nusc.version
+    version = nusc.version # v1.0-trainval
     if eval_split in {'train', 'val', 'train_detect', 'train_track'}:
         assert version.endswith('trainval'), \
             'Error: Requested split {} which is not compatible with NuScenes version {}'.format(eval_split, version)
@@ -92,42 +92,45 @@ def load_gt(nusc: NuScenes, eval_split: str, box_cls, verbose: bool = False) -> 
         assert len(nusc.sample_annotation) > 0, \
             'Error: You are trying to evaluate on the test set but you do not have the annotations!'
 
-    sample_tokens = []
+    sample_tokens = [] # 获取val的token-->(6019,)
     for sample_token in sample_tokens_all:
         scene_token = nusc.get('sample', sample_token)['scene_token']
         scene_record = nusc.get('scene', scene_token)
-        if scene_record['name'] in splits[eval_split]:
+        if scene_record['name'] in splits[eval_split]: # 共150段
             sample_tokens.append(sample_token)
 
     all_annotations = EvalBoxes()
 
     # Load annotations and filter predictions and annotations.
     tracking_id_set = set()
+    # 逐个sample处理
     for sample_token in tqdm.tqdm(sample_tokens, leave=verbose):
 
-        sample = nusc.get('sample', sample_token)
-        sample_annotation_tokens = sample['anns']
+        sample = nusc.get('sample', sample_token) # 获取该sample的token
+        sample_annotation_tokens = sample['anns'] # 获取该sample标注的token
 
-        sample_boxes = []
+        sample_boxes = [] # 初始化该sample的box
+        # 逐个标注处理
         for sample_annotation_token in sample_annotation_tokens:
 
-            sample_annotation = nusc.get('sample_annotation', sample_annotation_token)
+            sample_annotation = nusc.get('sample_annotation', sample_annotation_token) # 获取该标注的record
             if box_cls == DetectionBox:
-                # Get label name in detection task and filter unused labels.
+                # Get label name in detection task and filter unused labels. 获取类别名称映射
                 detection_name = category_to_detection_name(sample_annotation['category_name'])
                 if detection_name is None:
                     continue
 
                 # Get attribute_name.
-                attr_tokens = sample_annotation['attribute_tokens']
+                attr_tokens = sample_annotation['attribute_tokens'] # 获取该annotation属性的token
                 attr_count = len(attr_tokens)
                 if attr_count == 0:
                     attribute_name = ''
                 elif attr_count == 1:
-                    attribute_name = attribute_map[attr_tokens[0]]
+                    attribute_name = attribute_map[attr_tokens[0]] # 获取该类别的属性 vehicle.moving;cycle.with_rider;pedestrian_moving....
                 else:
                     raise Exception('Error: GT annotations must not have more than one attribute!')
 
+                # 构造DetectionBox
                 sample_boxes.append(
                     box_cls(
                         sample_token=sample_token,
@@ -142,8 +145,8 @@ def load_gt(nusc: NuScenes, eval_split: str, box_cls, verbose: bool = False) -> 
                     )
                 )
             elif box_cls == TrackingBox:
-                # Use nuScenes token as tracking id.
-                tracking_id = sample_annotation['instance_token']
+                # Use nuScenes token as tracking id. 使用nuScenes的token作为跟踪的id
+                tracking_id = sample_annotation['instance_token'] # 前后两帧可以根据token关联
                 tracking_id_set.add(tracking_id)
 
                 # Get label name in detection task and filter unused labels.
@@ -169,12 +172,12 @@ def load_gt(nusc: NuScenes, eval_split: str, box_cls, verbose: bool = False) -> 
             else:
                 raise NotImplementedError('Error: Invalid box_cls %s!' % box_cls)
 
-        all_annotations.add_boxes(sample_token, sample_boxes)
+        all_annotations.add_boxes(sample_token, sample_boxes) # 根据sample的token，将sample_boxes加入all annotations
 
     if verbose:
         print("Loaded ground truth annotations for {} samples.".format(len(all_annotations.sample_tokens)))
 
-    return all_annotations
+    return all_annotations # Evalbox with 187528 boxes across 6019 samples
 
 
 def add_center_dist(nusc: NuScenes,
@@ -185,11 +188,12 @@ def add_center_dist(nusc: NuScenes,
     :param eval_boxes: A set of boxes, either GT or predictions.
     :return: eval_boxes augmented with center distances.
     """
+    # 逐个sample处理
     for sample_token in eval_boxes.sample_tokens:
-        sample_rec = nusc.get('sample', sample_token)
-        sd_record = nusc.get('sample_data', sample_rec['data']['LIDAR_TOP'])
-        pose_record = nusc.get('ego_pose', sd_record['ego_pose_token'])
-
+        sample_rec = nusc.get('sample', sample_token) # 根据sample token获取该sample的rec
+        sd_record = nusc.get('sample_data', sample_rec['data']['LIDAR_TOP']) # 获取sample data的record
+        pose_record = nusc.get('ego_pose', sd_record['ego_pose_token']) # 获取自车pose的record
+        # 逐个box处理，计算相对自车的平移量(直线距离)
         for box in eval_boxes[sample_token]:
             # Both boxes and ego pose are given in global coord system, so distance can be calculated directly.
             # Note that the z component of the ego pose is 0.
@@ -197,7 +201,7 @@ def add_center_dist(nusc: NuScenes,
                                box.translation[1] - pose_record['translation'][1],
                                box.translation[2] - pose_record['translation'][2])
             if isinstance(box, DetectionBox) or isinstance(box, TrackingBox):
-                box.ego_translation = ego_translation
+                box.ego_translation = ego_translation # 在box中增加自车平移量字段
             else:
                 raise NotImplementedError
 
@@ -215,31 +219,32 @@ def filter_eval_boxes(nusc: NuScenes,
     :param max_dist: Maps the detection name to the eval distance threshold for that class.
     :param verbose: Whether to print to stdout.
     """
-    # Retrieve box type for detectipn/tracking boxes.
-    class_field = _get_box_class_field(eval_boxes)
+    # Retrieve box type for detection/tracking boxes.
+    class_field = _get_box_class_field(eval_boxes) # 'detection_name'
 
     # Accumulators for number of filtered boxes.
     total, dist_filter, point_filter, bike_rack_filter = 0, 0, 0, 0
+    # 逐sample处理
     for ind, sample_token in enumerate(eval_boxes.sample_tokens):
 
         # Filter on distance first.
-        total += len(eval_boxes[sample_token])
+        total += len(eval_boxes[sample_token]) # 计算该sample的box数量
         eval_boxes.boxes[sample_token] = [box for box in eval_boxes[sample_token] if
-                                          box.ego_dist < max_dist[box.__getattribute__(class_field)]]
+                                          box.ego_dist < max_dist[box.__getattribute__(class_field)]] # 移除距离大于阈值的box
         dist_filter += len(eval_boxes[sample_token])
 
         # Then remove boxes with zero points in them. Eval boxes have -1 points by default.
-        eval_boxes.boxes[sample_token] = [box for box in eval_boxes[sample_token] if not box.num_pts == 0]
+        eval_boxes.boxes[sample_token] = [box for box in eval_boxes[sample_token] if not box.num_pts == 0] # 移除没有点的box
         point_filter += len(eval_boxes[sample_token])
 
         # Perform bike-rack filtering.
         sample_anns = nusc.get('sample', sample_token)['anns']
         bikerack_recs = [nusc.get('sample_annotation', ann) for ann in sample_anns if
-                         nusc.get('sample_annotation', ann)['category_name'] == 'static_object.bicycle_rack']
+                         nusc.get('sample_annotation', ann)['category_name'] == 'static_object.bicycle_rack'] # 移除类别名为static_object.bicycle_rack的box
         bikerack_boxes = [Box(rec['translation'], rec['size'], Quaternion(rec['rotation'])) for rec in bikerack_recs]
         filtered_boxes = []
         for box in eval_boxes[sample_token]:
-            if box.__getattribute__(class_field) in ['bicycle', 'motorcycle']:
+            if box.__getattribute__(class_field) in ['bicycle', 'motorcycle']: # 如果box的类别是'bicycle'或'motorcycle'
                 in_a_bikerack = False
                 for bikerack_box in bikerack_boxes:
                     if np.sum(points_in_box(bikerack_box, np.expand_dims(np.array(box.translation), axis=1))) > 0:

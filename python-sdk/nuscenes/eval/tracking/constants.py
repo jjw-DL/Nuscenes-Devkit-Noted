@@ -9,8 +9,8 @@ TRACKING_METRICS = [*AMOT_METRICS, *INTERNAL_METRICS, *LEGACY_METRICS]
 
 # Define mapping for metrics averaged over classes.
 AVG_METRIC_MAP = {  # Mapping from average metric name to individual per-threshold metric name.
-    'amota': 'motar',
-    'amotp': 'motp'
+    'amota': 'motar', # 从平均指标名称映射到单个阈值指标名称
+    'amotp': 'motp' 
 }
 
 # Define mapping for metrics that use motmetrics library.

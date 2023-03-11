@@ -223,26 +223,27 @@ class TrackingMetrics:
 
     def compute_metric(self, metric_name: str, class_name: str = 'all') -> float:
         if class_name == 'all':
-            data = list(self.label_metrics[metric_name].values())
+            data = list(self.label_metrics[metric_name].values()) # 7类的指标
             if len(data) > 0:
                 # Some metrics need to be summed, not averaged.
                 # Nan entries are ignored.
+                # 下列指标则求和
                 if metric_name in ['mt', 'ml', 'tp', 'fp', 'fn', 'ids', 'frag']:
                     return float(np.nansum(data))
                 else:
-                    return float(np.nanmean(data))
+                    return float(np.nanmean(data)) # 其他指标求平均值
             else:
                 return np.nan
         else:
             return float(self.label_metrics[metric_name][class_name])
 
     def serialize(self) -> Dict[str, Any]:
-        metrics = dict()
-        metrics['label_metrics'] = self.label_metrics
-        metrics['eval_time'] = self.eval_time
-        metrics['cfg'] = self.cfg.serialize()
+        metrics = dict() # 初始化字典
+        metrics['label_metrics'] = self.label_metrics # 记录不同类别的metrics
+        metrics['eval_time'] = self.eval_time # 记录评估时间
+        metrics['cfg'] = self.cfg.serialize() # 记录配置信息
         for metric_name in self.label_metrics.keys():
-            metrics[metric_name] = self.compute_metric(metric_name)
+            metrics[metric_name] = self.compute_metric(metric_name) # 逐指标计算
 
         return metrics
 

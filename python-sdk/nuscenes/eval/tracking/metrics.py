@@ -25,8 +25,9 @@ def track_initialization_duration(df: DataFrame, obj_frequencies: DataFrame) -> 
     """
     tid = 0
     missed_tracks = 0
+    # 逐个跟踪gt处理
     for gt_tracking_id in obj_frequencies.index:
-        # Get matches.
+        # Get matches. 获取该物体匹配的Dataframe
         dfo = df.noraw[df.noraw.OId == gt_tracking_id]
         notmiss = dfo[dfo.Type != 'MISS']
 
@@ -37,18 +38,19 @@ def track_initialization_duration(df: DataFrame, obj_frequencies: DataFrame) -> 
         else:
             # Find the first time the object was detected and compute the difference to first time the object
             # entered the scene.
+            # 找到该物体第一次匹配上和第一次在该场景中被检测到的帧数差
             diff = notmiss.index[0][0] - dfo.index[0][0]
 
         # Multiply number of sample differences with approx. sample period (0.5 sec).
         assert diff >= 0, 'Time difference should be larger than or equal to zero: %.2f'
-        tid += diff * 0.5
+        tid += diff * 0.5 # 累加初始化跟踪时间
 
-    matched_tracks = len(obj_frequencies) - missed_tracks
+    matched_tracks = len(obj_frequencies) - missed_tracks # 计算匹配上的跟踪轨迹
     if matched_tracks == 0:
         # Return nan if there are no matches.
         return np.nan
     else:
-        return tid / matched_tracks
+        return tid / matched_tracks # 计算平均初始化跟踪时间
 
 
 def longest_gap_duration(df: DataFrame, obj_frequencies: DataFrame) -> float:
@@ -65,13 +67,14 @@ def longest_gap_duration(df: DataFrame, obj_frequencies: DataFrame) -> float:
 
     lgd = 0
     missed_tracks = 0
+    # 逐个Gt的跟踪轨迹处理
     for gt_tracking_id in obj_frequencies.index:
         # Find the frame_ids object is tracked and compute the gaps between those. Take the maximum one for longest gap.
         dfo = df.noraw[df.noraw.OId == gt_tracking_id]
-        matched = set(dfo[dfo.Type != 'MISS'].index.get_level_values(0).values)
+        matched = set(dfo[dfo.Type != 'MISS'].index.get_level_values(0).values) # 所有跟踪上的帧索引
 
         if len(matched) == 0:
-            # Ignore untracked objects.
+            # Ignore untracked objects. 忽略未跟踪的物体
             gap = 0
             missed_tracks += 1
         else:
@@ -79,14 +82,15 @@ def longest_gap_duration(df: DataFrame, obj_frequencies: DataFrame) -> float:
             # Note that we don't need to deal with FPs within the track as the GT is interpolated.
             gap = 0  # The biggest gap found.
             cur_gap = 0  # Current gap.
-            first_index = dfo.index[0][0]
-            last_index = dfo.index[-1][0]
+            first_index = dfo.index[0][0] # 跟踪起始帧
+            last_index = dfo.index[-1][0] # 跟踪结束帧
 
+            # 逐个跟踪帧处理
             for i in range(first_index, last_index + 1):
                 if i in matched:
                     # Reset when matched.
-                    gap = np.maximum(gap, cur_gap)
-                    cur_gap = 0
+                    gap = np.maximum(gap, cur_gap) # 记录最大gap
+                    cur_gap = 0 # 每次跟踪上，则当前gap清零
                 else:  # Grow gap when missed.
                     # Gap grows.
                     cur_gap += 1
@@ -98,12 +102,12 @@ def longest_gap_duration(df: DataFrame, obj_frequencies: DataFrame) -> float:
         lgd += gap * 0.5
 
     # Average LGD over the number of tracks.
-    matched_tracks = len(obj_frequencies) - missed_tracks
+    matched_tracks = len(obj_frequencies) - missed_tracks # 计算跟踪上的轨迹数
     if matched_tracks == 0:
         # Return nan if there are no matches.
         lgd = np.nan
     else:
-        lgd = lgd / matched_tracks
+        lgd = lgd / matched_tracks # 计算平均最大gap帧数
 
     return lgd
 
@@ -123,13 +127,13 @@ def motar(df: DataFrame, num_matches: int, num_misses: int, num_switches: int, n
     :param alpha: MOTAR weighting factor (previously 0.2).
     :return: The MOTAR or nan if there are no GT objects.
     """
-    recall = num_matches / num_objects
-    nominator = (num_misses + num_switches + num_false_positives) - (1 - recall) * num_objects
-    denominator = recall * num_objects
+    recall = num_matches / num_objects # 计算recall
+    nominator = (num_misses + num_switches + num_false_positives) - (1 - recall) * num_objects # 计算分子
+    denominator = recall * num_objects # 计算分母
     if denominator == 0:
         motar_val = np.nan
     else:
-        motar_val = 1 - alpha * nominator / denominator
+        motar_val = 1 - alpha * nominator / denominator # alpha默认为1
         motar_val = np.maximum(0, motar_val)
 
     return motar_val
@@ -147,6 +151,7 @@ def mota_custom(df: DataFrame, num_misses: int, num_switches: int, num_false_pos
     :param num_objects: The total number of objects of this class in the GT.
     :return: The MOTA or 0 if below 0.
     """
+    # 1 - （FN + IDS + FP）/ TP
     mota = 1. - (num_misses + num_switches + num_false_positives) / num_objects
     mota = np.maximum(0, mota)
     return mota
@@ -164,7 +169,7 @@ def motp_custom(df: DataFrame, num_detections: float) -> float:
     # Note that the default motmetrics function throws a warning when num_detections == 0.
     if num_detections == 0:
         return np.nan
-    return df.noraw['D'].sum() / num_detections
+    return df.noraw['D'].sum() / num_detections # 位置误差
 
 
 def faf(df: DataFrame, num_false_positives: float, num_frames: float) -> float:
@@ -175,7 +180,7 @@ def faf(df: DataFrame, num_false_positives: float, num_frames: float) -> float:
     :param num_frames: The number of frames.
     :return: Average FAF.
     """
-    return num_false_positives / num_frames * 100
+    return num_false_positives / num_frames * 100 # 每一帧的平均误报率
 
 
 def num_fragmentations_custom(df: DataFrame, obj_frequencies: DataFrame) -> float:
@@ -187,16 +192,17 @@ def num_fragmentations_custom(df: DataFrame, obj_frequencies: DataFrame) -> floa
     :return: The number of fragmentations.
     """
     fra = 0
+    # 逐个物体处理（156，）
     for o in obj_frequencies.index:
         # Find first and last time object was not missed (track span). Then count
         # the number switches from NOT MISS to MISS state.
-        dfo = df.noraw[df.noraw.OId == o]
-        notmiss = dfo[dfo.Type != 'MISS']
+        dfo = df.noraw[df.noraw.OId == o] # 该gt的id对应的DataFrame
+        notmiss = dfo[dfo.Type != 'MISS'] # 取非MISS的部分
         if len(notmiss) == 0:
             continue
-        first = notmiss.index[0]
-        last = notmiss.index[-1]
-        diffs = dfo.loc[first:last].Type.apply(lambda x: 1 if x == 'MISS' else 0).diff()
-        fra += diffs[diffs == 1].count()
+        first = notmiss.index[0] # 第一帧索引
+        last = notmiss.index[-1] # 最后一帧索引
+        diffs = dfo.loc[first:last].Type.apply(lambda x: 1 if x == 'MISS' else 0).diff() # 将MISS的位置设置为1
+        fra += diffs[diffs == 1].count() # 统计MISS的数量，也就是碎片的数量
 
     return fra
